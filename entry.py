@@ -64,12 +64,12 @@ def initialProductConfig(file):
         ans[key] = mval
 
     return ans
-def readAll(path, fileType):
+def readAll(path, fileType, term='Positions'):
     files = os.listdir(path)
     textContainer = []
     excelFileList = []
     for file in files:
-        if 'Positions' not in file:
+        if term not in file:
             continue
         file = path + '/' + file
         if not os.path.isfile(file):
@@ -81,12 +81,86 @@ def readAll(path, fileType):
 
     return excelFileList
 
+def filter_OrderDetails(date, path = "./csv"):
+    global strYMD
+    print(strYMD)
+    # dueConfigPath = "./config/date.txt"
+    # g_dueFunds = initialDueConfig(dueConfigPath)
+    excelFileList = readAll(path, 'csv', term='OrderDetails')
+
+    fileLen = len(excelFileList)
+    dateList = [date for x in range(fileLen)]
+    # argList = [(tpath, tday) for tpath in excelFileList for tday in dateList ]
+    with Pool(4) as p:
+        p.map(merge_OrderDetails, excelFileList)
+    return
+
+
+def merge_OrderDetails(arg):
+    # path, cday = arg
+    # print(path)
+    path = arg
+    dirsplit = os.path.split(path)
+    name = dirsplit[-1]
+    outputPath = "./output/" + name
+    last_row = None
+    try:
+        # skip_footer=1, engine='python'
+        df = pd.read_csv(path, header=1)
+        last_row = df[-1]
+        df = df[:-1]
+        # df_2b = pd.read_csv(path, header=None, skiprows=[0])
+    except Exception as e:
+        print(e)
+
+    # df["OpenDate"] =df["OpenDate"].apply(lambda x: cday)
+    # # print(df["OpenDate"])
+
+    arr = df.values
+    df = df.fillna("N/A")
+
+    ds = df.ix[:, 0:17]
+    # print(ds)
+
+
+
+    gb_cols = ['OpenDate', 'Product Code', 'BidPrice', 'AskPrice', 'H/S']
+    sum_cols = ['Margin', 'Float_P/L', 'MTM_P/L',  'L-Lots', 'S-Lots']
+    dsg = ds.groupby(gb_cols, as_index=False)['Margin', 'Float_P/L', 'MTM_P/L',  'L-Lots', 'S-Lots'].sum()
+    dsgf = ds.groupby(gb_cols, as_index=False).first()
+    dsgf = dsgf.drop(sum_cols, axis=1)
+    result = pd.merge(dsg, dsgf, how='left', on=gb_cols)
+    # print(result)
+    # ignore_index=True
+    result.append(last_row)
+    # result = pd.concat([result, last_row])
+    result = result.sort_values(by=['Product Code', 'BidPrice',  'AskPrice'], ascending=[0, 0, 0])
+    # print(result)
+
+    col_seq = ['OpenDate', 'Serial_No', 'Exchange', 'Product Code', 'L-Lots', 'BidPrice', 'S-Lots',
+               'AskPrice', 'Previous_SP', 'SP', 'Float_P/L', 'MTM_P/L', 'H/S', 'Margin', 'Contract Size',
+               'Account Code', 'Expiry Year']
+    header_seq = ['Positions Details', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    df_col = pd.DataFrame(col_seq, index=col_seq)
+    df_col = df_col.T
+
+    result = pd.concat([df_col, result])
+
+    result.to_csv(outputPath, index=False, columns=col_seq, header=header_seq)
+
+
+
+    return
+
+
+
 def filter(date, path = "./csv"):
     global strYMD
     print(strYMD)
     # dueConfigPath = "./config/date.txt"
     # g_dueFunds = initialDueConfig(dueConfigPath)
     excelFileList = readAll(path, 'csv')
+
     fileLen = len(excelFileList)
     dateList = [date for x in range(fileLen)]
     argList = [(tpath, tday) for tpath in excelFileList for tday in dateList ]
@@ -116,22 +190,22 @@ def changeDate(arg):
     # df_2b.ix[1:, 0] = df_2b.ix[1:, 0].apply(lambda x: cday  )
     # df_2b = df_2b.fillna("")
     # print(df_2b)
-    print(df["OpenDate"])
-    print(df.head())
+    # print(df["OpenDate"])
+    # print(df.head())
     # print(df.head)
     # df.apply(lambda x: np.nan if pd.isnull(x.Upper) \
     #     else 'U' if x.Price > x.Upper
     # else 'D' if x.Price < x.Lower \
     #     else 'M', axis=1)
     df["OpenDate"] =df["OpenDate"].apply(lambda x: cday)
-    print(df["OpenDate"])
+    # print(df["OpenDate"])
 
     arr = df.values
     df = df.fillna("N/A")
     # ds = df.iloc[[1,17],[0,2]]
-    ds = df
-    # ds = df.ix[:, 0:17]
-    print(ds)
+    # ds = df
+    ds = df.ix[:, 0:17]
+    # print(ds)
     # ds.to_csv(outputPath, index=False)
     # OpenDate	Serial_No	Exchange	Product Code	L-Lots	BidPrice	S-Lots	AskPrice
     # Previous_SP	SP	Float_P/L	MTM_P/L	H/S	Margin	Contract Size	Account Code	Expiry Year
@@ -139,24 +213,37 @@ def changeDate(arg):
     # df['h-index'] = df.groupby('author')['citations'].transform(lambda x: ( x >= x.rank(ascending=False, method='first') ).sum() )
     # df['h-index'] = df.groupby('author')['citations'].transform(lambda x: ( x >= x.rank(ascending=False, method='first') ).sum() ) ​
     # dsg = ds.groupby(['OpenDate', 'Product Code', 'L-Lots', 'BidPrice', 'S-Lots', 'AskPrice', 'H/S'], as_index=False).agg({'Margin': np.sum, 'Account Code': np.mean})
-    gb_cols = ['OpenDate', 'Product Code', 'L-Lots', 'BidPrice', 'S-Lots', 'AskPrice', 'H/S']
-    dsg = ds.groupby(gb_cols, as_index=False)['Margin', 'Float_P/L', 'MTM_P/L'].sum()
+    gb_cols = ['OpenDate', 'Product Code', 'BidPrice', 'AskPrice', 'H/S']
+    sum_cols = ['Margin', 'Float_P/L', 'MTM_P/L',  'L-Lots', 'S-Lots']
+    dsg = ds.groupby(gb_cols, as_index=False)['Margin', 'Float_P/L', 'MTM_P/L',  'L-Lots', 'S-Lots'].sum()
     dsgf = ds.groupby(gb_cols, as_index=False).first()
-    dsgf = dsgf.drop(['Margin', 'Float_P/L', 'MTM_P/L'], axis=1)
+    dsgf = dsgf.drop(sum_cols, axis=1)
     result = pd.merge(dsg, dsgf, how='left', on=gb_cols)
-    print(result)
+    # print(result)
     # ignore_index=True
     result.append(last_row)
     # result = pd.concat([result, last_row])
-    result = df.sort(['Serial_No', 'Exchange'], ascending=[1, 1])
-    print(result)
+    result = result.sort_values(by=['Product Code', 'BidPrice',  'AskPrice'], ascending=[0, 0, 0])
+    # print(result)
     #
     #
     #
+    # col_seq = ['OpenDate', 'Serial_No', 'Exchange', 'Product Code', 'L-Lots', 'BidPrice', 'S-Lots',
+    #            'AskPrice', 'Previous_SP', 'SP', 'Float_P/L', 'MTM_P/L', 'H/S', 'Margin', 'Contract Size',
+    #            'Account Code', 'Expiry Year', 'Expiry Month']
     col_seq = ['OpenDate', 'Serial_No', 'Exchange', 'Product Code', 'L-Lots', 'BidPrice', 'S-Lots',
                'AskPrice', 'Previous_SP', 'SP', 'Float_P/L', 'MTM_P/L', 'H/S', 'Margin', 'Contract Size',
-               'Account Code', 'Expiry Year', 'Expiry Month']
-    result.to_csv(outputPath, index=False, columns=col_seq)
+               'Account Code', 'Expiry Year']
+    header_seq = ['Positions Details', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    df_col = pd.DataFrame(col_seq, index=col_seq)
+    df_col = df_col.T
+    # print(df_col)
+    # result = result.append(df_col)
+    # result = pd.concat([result, df_col])
+    result = pd.concat([df_col, result])
+    # print(result)
+    # header=header_seq columns=col_seq,
+    result.to_csv(outputPath, index=False, columns=col_seq, header=header_seq)
     # agg({'Margin': ['sum'], 'Account Code': ['mean']})
     # print(dsg)
     # print("-" * 100)
@@ -181,6 +268,8 @@ def changeDate(arg):
     '''
     # df.to_csv(outputPath, index=False)
     return
+
+
 def test(myArr = []):
     myArr.append(1)
     print(myArr)
